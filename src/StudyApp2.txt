@@ -1,0 +1,184 @@
+import React, { useState, useEffect, useRef } from "react";
+import {
+  CalendarClock, ClipboardList, LineChart as LineChartIcon,
+  BookOpenCheck, HelpCircle, LogOut, Target,
+} from "lucide-react";
+import { supabase } from "./lib/supabase";
+import { T } from "./tokens";
+import { showNotification } from "./lib/notify";
+import Dashboard from "./components/Dashboard";
+import Jadwal from "./components/Jadwal";
+import TryOut from "./components/TryOut";
+import Materi from "./components/Materi";
+import BankSoal from "./components/BankSoal";
+import Analitik from "./components/Analitik";
+
+const DEFAULT_CONFIG = { examDate: "2027-04-25", target1: "Teknik Sipil UGM", target2: "Teknik Sipil UNDIP", reminderTime: "19:00" };
+const DEFAULT_DATA = { config: DEFAULT_CONFIG, schedule: {}, tryouts: [], materi: [], reminder: "", soalHistory: [], notifEnabled: false };
+
+const todayName = () => ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"][new Date().getDay()];
+
+// ---------- Aplikasi utama (data disimpan di tabel Supabase, per akun) ----------
+export default function StudyApp({ session }) {
+  const userId = session.user.id;
+  const [tab, setTab] = useState("dashboard");
+  const [loaded, setLoaded] = useState(false);
+  const [data, setData] = useState(DEFAULT_DATA);
+  const saveTimer = useRef(null);
+  const firstLoad = useRef(true);
+  const lastNotifiedDate = useRef(null);
+
+  // Muat data user dari Supabase saat pertama kali masuk
+  useEffect(() => {
+    (async () => {
+      const { data: row, error } = await supabase
+        .from("user_data")
+        .select("data")
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (!error && row?.data) {
+        setData({ ...DEFAULT_DATA, ...row.data, config: { ...DEFAULT_CONFIG, ...row.data.config } });
+      }
+      firstLoad.current = false;
+      setLoaded(true);
+    })();
+  }, [userId]);
+
+  // Simpan otomatis (debounce 700ms) setiap kali data berubah
+  useEffect(() => {
+    if (!loaded || firstLoad.current) return;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(async () => {
+      await supabase.from("user_data").upsert({ user_id: userId, data, updated_at: new Date().toISOString() });
+    }, 700);
+    return () => clearTimeout(saveTimer.current);
+  }, [data, loaded, userId]);
+
+  const setConfig = (v) => setData((d) => ({ ...d, config: typeof v === "function" ? v(d.config) : v }));
+  const setSchedule = (v) => setData((d) => ({ ...d, schedule: typeof v === "function" ? v(d.schedule) : v }));
+  const setTryouts = (v) => setData((d) => ({ ...d, tryouts: typeof v === "function" ? v(d.tryouts) : v }));
+  const setMateri = (v) => setData((d) => ({ ...d, materi: typeof v === "function" ? v(d.materi) : v }));
+  const setReminder = (v) => setData((d) => ({ ...d, reminder: typeof v === "function" ? v(d.reminder) : v }));
+  const setSoalHistory = (v) => setData((d) => ({ ...d, soalHistory: typeof v === "function" ? v(d.soalHistory) : v }));
+  const setNotifEnabled = (v) => setData((d) => ({ ...d, notifEnabled: typeof v === "function" ? v(d.notifEnabled) : v }));
+
+  const { config, schedule, tryouts, materi, reminder, soalHistory, notifEnabled } = data;
+
+  // Cek tiap menit apakah sudah waktunya kirim pengingat harian (hanya selagi tab terbuka)
+  useEffect(() => {
+    if (!loaded) return;
+    const check = () => {
+      if (!notifEnabled || Notification?.permission !== "granted") return;
+      const now = new Date();
+      const hhmm = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+      const todayKey = now.toISOString().slice(0, 10);
+      if (hhmm === (config.reminderTime || "19:00") && lastNotifiedDate.current !== todayKey) {
+        lastNotifiedDate.current = todayKey;
+        const belum = (schedule[todayName()] || []).filter((it) => !it.done);
+        const body = belum.length ? belum.map((it) => it.text).join(", ") : "Semua agenda hari ini sudah selesai — mantap!";
+        showNotification("Pengingat belajar hari ini", body);
+      }
+    };
+    const id = setInterval(check, 60000);
+    return () => clearInterval(id);
+  }, [loaded, notifEnabled, config.reminderTime, schedule]);
+
+  const daysLeft = (() => {
+    const now = new Date();
+    const exam = new Date(config.examDate);
+    return Math.ceil((exam - now) / (1000 * 60 * 60 * 24));
+  })();
+
+  const navItems = [
+    { id: "dashboard", label: "Dasbor", icon: CalendarClock },
+    { id: "jadwal", label: "Jadwal Belajar", icon: ClipboardList },
+    { id: "tryout", label: "Tracker Try Out", icon: LineChartIcon },
+    { id: "analitik", label: "Analitik", icon: Target },
+    { id: "materi", label: "Target Materi", icon: BookOpenCheck },
+    { id: "soal", label: "Bank Soal", icon: HelpCircle },
+  ];
+
+  if (!loaded) {
+    return (
+      <div className="w-full h-screen flex items-center justify-center" style={{ background: T.paper }}>
+        <div style={{ fontFamily: "'IBM Plex Mono', monospace", color: T.steel }}>Memuat data…</div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="w-full flex"
+      style={{
+        minHeight: "100vh",
+        background: T.paper,
+        backgroundImage: `linear-gradient(${T.paperLine} 1px, transparent 1px), linear-gradient(90deg, ${T.paperLine} 1px, transparent 1px)`,
+        backgroundSize: "24px 24px",
+        fontFamily: "'Inter', sans-serif",
+        color: T.ink,
+      }}
+    >
+      <style>{`input, select { font-family: 'Inter', sans-serif; } ::placeholder { color: #9AA7B0; }`}</style>
+
+      <div className="hidden md:flex flex-col w-56 shrink-0 p-6" style={{ background: T.navy, color: "#EAF2F8" }}>
+        <div style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-lg font-bold mb-1">Rencana Studi</div>
+        <div className="text-xs mb-1" style={{ color: T.steelLight, fontFamily: "'IBM Plex Mono', monospace" }}>UTBK-SNBT · Teknik Sipil</div>
+        <div className="text-xs mb-8 truncate" style={{ color: "#8FA3B3" }}>{session.user.email}</div>
+        <nav className="flex flex-col gap-1">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const active = tab === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => setTab(item.id)}
+                className="flex items-center gap-3 px-3 py-2.5 text-sm text-left transition-colors"
+                style={{
+                  background: active ? "rgba(95,168,211,0.18)" : "transparent",
+                  color: active ? "#FFFFFF" : "#B9C9D6",
+                  borderLeft: active ? `3px solid ${T.steelLight}` : "3px solid transparent",
+                  fontWeight: active ? 600 : 500,
+                }}
+              >
+                <Icon size={16} /> {item.label}
+              </button>
+            );
+          })}
+        </nav>
+        <div className="mt-auto pt-8" style={{ borderTop: `1px solid rgba(255,255,255,0.12)` }}>
+          <div className="text-xs" style={{ color: T.steelLight, fontFamily: "'IBM Plex Mono', monospace" }}>H-{daysLeft >= 0 ? daysLeft : 0}</div>
+          <div className="text-xs mt-1 mb-3" style={{ color: "#8FA3B3" }}>menuju UTBK</div>
+          <button onClick={() => supabase.auth.signOut()} className="flex items-center gap-1.5 text-xs" style={{ color: "#8FA3B3" }}>
+            <LogOut size={12} /> Keluar
+          </button>
+        </div>
+      </div>
+
+      <div className="md:hidden fixed bottom-0 left-0 right-0 flex justify-around p-2 z-10 overflow-x-auto" style={{ background: T.navy }}>
+        {navItems.map((item) => {
+          const Icon = item.icon;
+          const active = tab === item.id;
+          return (
+            <button key={item.id} onClick={() => setTab(item.id)} className="flex flex-col items-center gap-1 px-2 py-1 shrink-0" style={{ color: active ? "#FFFFFF" : "#8FA3B3" }}>
+              <Icon size={18} />
+              <span className="text-[10px]">{item.label}</span>
+            </button>
+          );
+        })}
+        <button onClick={() => supabase.auth.signOut()} className="flex flex-col items-center gap-1 px-2 py-1 shrink-0" style={{ color: "#8FA3B3" }}>
+          <LogOut size={18} />
+          <span className="text-[10px]">Keluar</span>
+        </button>
+      </div>
+
+      <div className="flex-1 p-6 md:p-10 pb-24 md:pb-10 overflow-auto">
+        {tab === "dashboard" && <Dashboard config={config} setConfig={setConfig} daysLeft={daysLeft} tryouts={tryouts} materi={materi} schedule={schedule} reminder={reminder} setReminder={setReminder} />}
+        {tab === "jadwal" && <Jadwal schedule={schedule} setSchedule={setSchedule} config={config} setConfig={setConfig} notifEnabled={notifEnabled} setNotifEnabled={setNotifEnabled} />}
+        {tab === "tryout" && <TryOut tryouts={tryouts} setTryouts={setTryouts} />}
+        {tab === "analitik" && <Analitik tryouts={tryouts} materi={materi} config={config} soalHistory={soalHistory} />}
+        {tab === "materi" && <Materi materi={materi} setMateri={setMateri} />}
+        {tab === "soal" && <BankSoal soalHistory={soalHistory} setSoalHistory={setSoalHistory} />}
+      </div>
+    </div>
+  );
+}
