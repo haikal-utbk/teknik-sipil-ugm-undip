@@ -1,10 +1,23 @@
 import React from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
-import { TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { TrendingUp, TrendingDown, Minus, ArrowRight } from "lucide-react";
 import { T, BlueprintCard, Eyebrow } from "../tokens";
 import { SUBTES, TARGETS, avgSkor, gapToTarget, linearProjection } from "../lib/scoring";
 
-export default function Analitik({ tryouts, materi, config, soalHistory }) {
+// Jumlah soal latihan yang disarankan per minggu, diskalakan dari besar gap ke target.
+// Gap kecil (hampir sampai target) tetap dikasih porsi minimum biar tidak berhenti latihan.
+function recommendedSoalCount(gap) {
+  if (gap == null) return 10;
+  return Math.min(30, Math.max(10, Math.round(gap / 5)));
+}
+
+// Kelompok penalaran & numerasi — secara umum relevan untuk jurusan kuantitatif seperti
+// Teknik Sipil. Ini strategi belajar umum, BUKAN bobot penilaian resmi SNPMB/PTN — SNPMB
+// tidak mempublikasikan rumus bobot per jurusan.
+const PRIORITY_GROUP = ["PU", "PK", "PM"];
+const avgOf = (arr) => (arr.length ? Math.round(arr.reduce((a, s) => a + s.value, 0) / arr.length) : null);
+
+export default function Analitik({ tryouts, materi, config, soalHistory, onFocusSubtes }) {
   const sorted = tryouts.slice().sort((a, b) => a.date.localeCompare(b.date));
   const last = sorted[sorted.length - 1];
   const prev = sorted[sorted.length - 2];
@@ -18,6 +31,13 @@ export default function Analitik({ tryouts, materi, config, soalHistory }) {
     : [];
   const weakest = subtesRanked[0];
   const weakestMateri = weakest ? materi.filter((m) => m.subject === weakest.short && m.status !== "selesai").slice(0, 5) : [];
+
+  // subtesRanked sudah terurut naik dari yang terlemah, jadi filter tetap mempertahankan urutan itu
+  const priorityGroup = subtesRanked.filter((s) => PRIORITY_GROUP.includes(s.short));
+  const otherGroup = subtesRanked.filter((s) => !PRIORITY_GROUP.includes(s.short));
+  const priorityAvg = avgOf(priorityGroup);
+  const otherAvg = avgOf(otherGroup);
+  const priorityWeakest = priorityGroup[0];
 
   const soalSessions = soalHistory || [];
   const soalAvgPct = soalSessions.length
@@ -62,6 +82,57 @@ export default function Analitik({ tryouts, materi, config, soalHistory }) {
           );
         })}
       </div>
+
+      {weakest && (
+        <BlueprintCard className="mb-6" style={{ borderColor: T.amber }}>
+          <Eyebrow>Rekomendasi Latihan Minggu Ini</Eyebrow>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="text-sm" style={{ color: T.ink }}>
+              Subtes terlemahmu saat ini <b>{weakest.short} — {weakest.label}</b> (skor {weakest.value}).
+              Kejar target UGM ({TARGETS[0].value}) dengan kerjakan sekitar{" "}
+              <b style={{ color: T.navy }}>{recommendedSoalCount(TARGETS[0].value - weakest.value)} soal {weakest.short}</b> minggu ini.
+            </div>
+            {onFocusSubtes && (
+              <button
+                onClick={() => onFocusSubtes(weakest.short)}
+                className="px-3 py-1.5 text-sm font-medium flex items-center gap-1.5 shrink-0"
+                style={{ background: T.amber, color: "#fff" }}
+              >
+                Latihan soal {weakest.short} <ArrowRight size={14} />
+              </button>
+            )}
+          </div>
+        </BlueprintCard>
+      )}
+
+      {priorityGroup.length > 0 && (
+        <BlueprintCard className="mb-6">
+          <Eyebrow>Kelompok Prioritas: Penalaran & Kuantitatif</Eyebrow>
+          <div className="text-sm mb-2" style={{ color: T.ink }}>
+            Rata-rata kelompok <b>PU + PK + PM</b>: <b style={{ color: T.navy }}>{priorityAvg}</b>
+            {otherAvg != null && <> · rata-rata subtes lainnya: <b style={{ color: T.navy }}>{otherAvg}</b></>}
+          </div>
+          {priorityWeakest && (
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div className="text-sm" style={{ color: T.ink }}>
+                Yang paling perlu didorong di kelompok ini: <b>{priorityWeakest.short} — {priorityWeakest.label}</b> (skor {priorityWeakest.value}).
+              </div>
+              {onFocusSubtes && (
+                <button
+                  onClick={() => onFocusSubtes(priorityWeakest.short)}
+                  className="px-3 py-1.5 text-sm font-medium flex items-center gap-1.5 shrink-0"
+                  style={{ background: T.steel, color: "#fff" }}
+                >
+                  Latihan soal {priorityWeakest.short} <ArrowRight size={14} />
+                </button>
+              )}
+            </div>
+          )}
+          <div className="text-xs mt-3 pt-2" style={{ borderTop: `1px solid ${T.paperLine}`, color: T.inkSoft }}>
+            *Untuk jurusan kuantitatif seperti Teknik Sipil, kelompok penalaran & numerasi (PU, PK, PM) umumnya masuk akal diprioritaskan karena relevan dengan tuntutan kuliahnya. Ini strategi belajar umum, <b>bukan</b> bobot penilaian resmi dari SNPMB atau PTN — SNPMB tidak mempublikasikan rumus bobot per jurusan.
+          </div>
+        </BlueprintCard>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
         <BlueprintCard>

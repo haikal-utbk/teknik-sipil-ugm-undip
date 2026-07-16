@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { RefreshCw, Timer } from "lucide-react";
+import { RefreshCw, Timer, RotateCcw, Plus, X } from "lucide-react";
 import { T, BlueprintCard, Eyebrow } from "../tokens";
 import { SUBTES } from "../lib/scoring";
 import { QUESTION_BANK } from "../data/questionBank";
@@ -7,17 +7,21 @@ import { QUESTION_BANK } from "../data/questionBank";
 const uid = () => Math.random().toString(36).slice(2, 10);
 const TIME_PER_SOAL = 90; // detik, dipakai saat Mode Ujian aktif
 
-export default function BankSoal({ soalHistory, setSoalHistory }) {
+export default function BankSoal({ soalHistory, setSoalHistory, initialFilter, soalRequests, setSoalRequests }) {
   const [idx, setIdx] = useState(0);
   const [selected, setSelected] = useState(null);
   const [answers, setAnswers] = useState({});
   const [finished, setFinished] = useState(false);
-  const [filter, setFilter] = useState("Semua");
+  const [filter, setFilter] = useState(initialFilter || "Semua");
   const [examMode, setExamMode] = useState(false);
   const [timeLeft, setTimeLeft] = useState(TIME_PER_SOAL);
+  const [reviewQueue, setReviewQueue] = useState(null); // null = mode normal, array = Mode Review Soal Salah
+  const [showRequestForm, setShowRequestForm] = useState(false);
+  const [reqSubtes, setReqSubtes] = useState(SUBTES[0].short);
+  const [reqNote, setReqNote] = useState("");
   const savedRef = useRef(false);
 
-  const questions = filter === "Semua" ? QUESTION_BANK : QUESTION_BANK.filter((q) => q.subtes === filter);
+  const questions = reviewQueue || (filter === "Semua" ? QUESTION_BANK : QUESTION_BANK.filter((q) => q.subtes === filter));
   const current = questions[idx];
 
   const choose = (i) => {
@@ -39,8 +43,17 @@ export default function BankSoal({ soalHistory, setSoalHistory }) {
     }
   };
   const restart = () => { setIdx(0); setSelected(null); setAnswers({}); setFinished(false); setTimeLeft(TIME_PER_SOAL); savedRef.current = false; };
-  const changeFilter = (f) => { setFilter(f); setIdx(0); setSelected(null); setAnswers({}); setFinished(false); setTimeLeft(TIME_PER_SOAL); savedRef.current = false; };
+  const changeFilter = (f) => { setFilter(f); setReviewQueue(null); setIdx(0); setSelected(null); setAnswers({}); setFinished(false); setTimeLeft(TIME_PER_SOAL); savedRef.current = false; };
   const toggleExamMode = () => { setExamMode((v) => !v); restart(); };
+  const startReview = (wrongQuestions) => { setReviewQueue(wrongQuestions); restart(); };
+
+  const submitRequest = () => {
+    if (!setSoalRequests) return;
+    setSoalRequests((r) => [...r, { id: uid(), subtes: reqSubtes, note: reqNote.trim(), date: new Date().toISOString().slice(0, 10) }]);
+    setReqNote("");
+    setShowRequestForm(false);
+  };
+  const removeRequest = (id) => setSoalRequests && setSoalRequests((r) => r.filter((x) => x.id !== id));
 
   // Timer Mode Ujian: hitung mundur per soal, otomatis lanjut kalau waktu habis
   useEffect(() => {
@@ -57,6 +70,7 @@ export default function BankSoal({ soalHistory, setSoalHistory }) {
     const q = QUESTION_BANK.find((x) => x.id === qid);
     return acc + (q && q.answer === ans ? 1 : 0);
   }, 0);
+  const wrongQuestions = questions.filter((q) => answers[q.id] !== q.answer);
 
   // Simpan riwayat sesi begitu selesai (sekali per sesi)
   useEffect(() => {
@@ -64,7 +78,7 @@ export default function BankSoal({ soalHistory, setSoalHistory }) {
     savedRef.current = true;
     setSoalHistory((h) => [
       ...h,
-      { id: uid(), date: new Date().toISOString().slice(0, 10), filter, examMode, total: questions.length, score },
+      { id: uid(), date: new Date().toISOString().slice(0, 10), filter: reviewQueue ? "Review" : filter, examMode, total: questions.length, score },
     ]);
   }, [finished]);
 
@@ -82,7 +96,7 @@ export default function BankSoal({ soalHistory, setSoalHistory }) {
     <div>
       <Eyebrow>Latihan Soal</Eyebrow>
       <h1 className="text-2xl md:text-3xl font-bold mb-2" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Bank Soal — Teknik Sipil</h1>
-      <p className="text-sm mb-6" style={{ color: T.inkSoft }}>Soal latihan buatan sendiri bernuansa teknik sipil — bukan soal resmi SNPMB, bukan pengganti try out resmi.</p>
+      <p className="text-sm mb-6" style={{ color: T.inkSoft }}>Soal latihan buatan sendiri dengan konteks umum/netral mengikuti gaya UTBK-SNBT asli — bukan soal resmi SNPMB, bukan pengganti try out resmi.</p>
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
         {["Semua", ...SUBTES.map((s) => s.short)].map((f) => (
@@ -90,9 +104,18 @@ export default function BankSoal({ soalHistory, setSoalHistory }) {
             {f}
           </button>
         ))}
+        {setSoalRequests && (
+          <button
+            onClick={() => setShowRequestForm((v) => !v)}
+            className="ml-auto px-3 py-1 text-xs font-medium flex items-center gap-1.5"
+            style={{ border: `1px solid ${T.paperLine}`, color: T.inkSoft }}
+          >
+            <Plus size={13} /> Minta Soal Baru{soalRequests?.length > 0 ? ` (${soalRequests.length})` : ""}
+          </button>
+        )}
         <button
           onClick={toggleExamMode}
-          className="ml-auto px-3 py-1 text-xs font-medium flex items-center gap-1.5"
+          className={setSoalRequests ? "px-3 py-1 text-xs font-medium flex items-center gap-1.5" : "ml-auto px-3 py-1 text-xs font-medium flex items-center gap-1.5"}
           style={{ background: examMode ? T.amber : "#fff", color: examMode ? "#fff" : T.inkSoft, border: `1px solid ${examMode ? T.amber : T.paperLine}` }}
           title="Mode Ujian: timer 90 detik per soal, otomatis lanjut kalau waktu habis"
         >
@@ -100,10 +123,48 @@ export default function BankSoal({ soalHistory, setSoalHistory }) {
         </button>
       </div>
 
+      {showRequestForm && (
+        <BlueprintCard className="mb-4">
+          <Eyebrow>Minta Soal Baru</Eyebrow>
+          <div className="flex flex-col sm:flex-row gap-2 mt-2">
+            <select value={reqSubtes} onChange={(e) => setReqSubtes(e.target.value)} className="border px-2 py-1.5 text-sm" style={{ borderColor: T.paperLine }}>
+              {SUBTES.map((s) => <option key={s.key} value={s.short}>{s.short} — {s.label}</option>)}
+            </select>
+            <input
+              value={reqNote}
+              onChange={(e) => setReqNote(e.target.value)}
+              placeholder="Catatan opsional, cth. butuh level lebih sulit"
+              className="flex-1 border px-2 py-1.5 text-sm min-w-0"
+              style={{ borderColor: T.paperLine }}
+            />
+            <button onClick={submitRequest} className="px-3 py-1.5 text-sm font-medium" style={{ background: T.steel, color: "#fff" }}>
+              Catat Permintaan
+            </button>
+          </div>
+          <div className="text-xs mt-2" style={{ color: T.inkSoft }}>
+            Permintaan ini tersimpan di datamu (belum otomatis dibuatkan) — sampaikan ke asisten AI-mu di sesi chat berikutnya supaya soalnya ditambahkan.
+          </div>
+
+          {soalRequests?.length > 0 && (
+            <div className="mt-3 pt-3" style={{ borderTop: `1px solid ${T.paperLine}` }}>
+              <div className="text-xs font-medium mb-1.5" style={{ color: T.inkSoft }}>Permintaan tercatat ({soalRequests.length}):</div>
+              <ul className="space-y-1">
+                {soalRequests.map((r) => (
+                  <li key={r.id} className="text-xs flex items-center justify-between gap-2" style={{ color: T.ink }}>
+                    <span><b>{r.subtes}</b>{r.note ? ` — ${r.note}` : ""} <span style={{ color: T.inkSoft }}>({r.date})</span></span>
+                    <button onClick={() => removeRequest(r.id)} style={{ color: T.red }}><X size={12} /></button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </BlueprintCard>
+      )}
+
       {!finished ? (
         <BlueprintCard>
           <div className="flex items-center justify-between mb-3">
-            <Eyebrow>Soal {idx + 1} / {questions.length} · {current.subtes}{current.topic ? ` · ${current.topic}` : ""}</Eyebrow>
+            <Eyebrow>{reviewQueue ? "Mode Review · " : ""}Soal {idx + 1} / {questions.length} · {current.subtes}{current.topic ? ` · ${current.topic}` : ""}</Eyebrow>
             <button onClick={restart} className="text-xs flex items-center gap-1" style={{ color: T.steel }}>
               <RefreshCw size={12} /> Ulangi
             </button>
@@ -139,7 +200,7 @@ export default function BankSoal({ soalHistory, setSoalHistory }) {
       ) : (
 
         <BlueprintCard>
-          <Eyebrow>Hasil</Eyebrow>
+          <Eyebrow>Hasil{reviewQueue ? " · Mode Review" : ""}</Eyebrow>
           <div className="text-4xl font-bold mb-1" style={{ fontFamily: "'IBM Plex Mono', monospace", color: T.navy }}>{score} / {questions.length}</div>
           <div className="text-sm mb-4" style={{ color: T.inkSoft }}>jawaban benar{examMode ? " · Mode Ujian" : ""}</div>
           <div className="space-y-3">
@@ -152,13 +213,25 @@ export default function BankSoal({ soalHistory, setSoalHistory }) {
                   <div className="text-xs mt-1" style={{ color: correct ? T.teal : T.red }}>
                     Jawabanmu: {ans != null ? q.opts[ans] : "(belum dijawab)"} {correct ? "— benar" : `— kunci: ${q.opts[q.answer]}`}
                   </div>
+                  {q.pembahasan && (
+                    <div className="text-xs mt-1" style={{ color: T.inkSoft }}>
+                      <span className="font-medium" style={{ color: T.steel }}>Pembahasan:</span> {q.pembahasan}
+                    </div>
+                  )}
                 </div>
               );
             })}
           </div>
-          <button onClick={restart} className="mt-4 px-3 py-1.5 text-sm font-medium flex items-center gap-1.5" style={{ background: T.steel, color: "#fff" }}>
-            <RefreshCw size={13} /> Ulangi Latihan
-          </button>
+          <div className="flex flex-wrap gap-2 mt-4">
+            <button onClick={restart} className="px-3 py-1.5 text-sm font-medium flex items-center gap-1.5" style={{ background: T.steel, color: "#fff" }}>
+              <RefreshCw size={13} /> Ulangi Latihan
+            </button>
+            {wrongQuestions.length > 0 && (
+              <button onClick={() => startReview(wrongQuestions)} className="px-3 py-1.5 text-sm font-medium flex items-center gap-1.5" style={{ background: T.amber, color: "#fff" }}>
+                <RotateCcw size={13} /> Review {wrongQuestions.length} Soal yang Salah
+              </button>
+            )}
+          </div>
         </BlueprintCard>
       )}
     </div>

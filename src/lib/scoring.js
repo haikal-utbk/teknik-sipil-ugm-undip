@@ -1,11 +1,32 @@
 // Helper murni untuk perhitungan skor dan tren.
 
 export const SUBTES = [
-  { key: "pk", label: "Penalaran Umum", short: "PU", max: 1000 },
+  { key: "pu", label: "Penalaran Umum", short: "PU", max: 1000 },
+  { key: "ppu", label: "Pengetahuan & Pemahaman Umum", short: "PPU", max: 1000 },
+  { key: "pbm", label: "Pemahaman Bacaan & Menulis", short: "PBM", max: 1000 },
+  { key: "pk", label: "Pengetahuan Kuantitatif", short: "PK", max: 1000 },
+  { key: "lbi", label: "Literasi B. Indonesia", short: "LBI", max: 1000 },
+  { key: "lbe", label: "Literasi B. Inggris", short: "LBE", max: 1000 },
   { key: "pm", label: "Penalaran Matematika", short: "PM", max: 1000 },
-  { key: "li", label: "Literasi B. Indonesia", short: "LI", max: 1000 },
-  { key: "le", label: "Literasi B. Inggris", short: "LE", max: 1000 },
   ];
+
+// Migrasi skor try out dari skema lama (4 subtes disederhanakan: field "pk" dulu
+// berarti Penalaran Umum) ke skema baru 7 subtes resmi UTBK-SNBT. Skor lama untuk
+// PPU/PBM/PK (Pengetahuan Kuantitatif) tidak ada datanya, jadi dikosongkan.
+export function migrateSkor(skor) {
+  if (!skor) return skor;
+  const isOldFormat = "li" in skor || "le" in skor;
+  if (!isOldFormat) return skor;
+  return {
+    pu: skor.pk ?? skor.pu ?? "",
+    ppu: "",
+    pbm: "",
+    pk: "",
+    lbi: skor.li ?? "",
+    lbe: skor.le ?? "",
+    pm: skor.pm ?? "",
+  };
+}
 
 // Ambang referensi skor (bukan angka resmi SNPMB — lihat catatan di Dashboard/Analitik)
 export const TARGETS = [

@@ -4,6 +4,7 @@ import {
   BookOpenCheck, HelpCircle, LogOut, Target,
 } from "lucide-react";
 import { supabase } from "./lib/supabase";
+import { migrateSkor } from "./lib/scoring";
 import { T } from "./tokens";
 import { showNotification } from "./lib/notify";
 import Dashboard from "./components/Dashboard";
@@ -14,7 +15,7 @@ import BankSoal from "./components/BankSoal";
 import Analitik from "./components/Analitik";
 
 const DEFAULT_CONFIG = { examDate: "2027-04-25", target1: "Teknik Sipil UGM", target2: "Teknik Sipil UNDIP", reminderTime: "19:00" };
-const DEFAULT_DATA = { config: DEFAULT_CONFIG, schedule: {}, tryouts: [], materi: [], reminder: "", soalHistory: [], notifEnabled: false };
+const DEFAULT_DATA = { config: DEFAULT_CONFIG, schedule: {}, tryouts: [], materi: [], reminder: "", soalHistory: [], notifEnabled: false, studyLog: [], soalRequests: [] };
 
 const todayName = () => ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"][new Date().getDay()];
 
@@ -24,6 +25,11 @@ export default function StudyApp({ session }) {
   const [tab, setTab] = useState("dashboard");
   const [loaded, setLoaded] = useState(false);
   const [data, setData] = useState(DEFAULT_DATA);
+  const [bankSoalFilter, setBankSoalFilter] = useState(null);
+  const goToBankSoal = (subtesShort) => {
+    setBankSoalFilter(subtesShort);
+    setTab("soal");
+  };
   const saveTimer = useRef(null);
   const firstLoad = useRef(true);
   const lastNotifiedDate = useRef(null);
@@ -37,7 +43,8 @@ export default function StudyApp({ session }) {
         .eq("user_id", userId)
         .maybeSingle();
       if (!error && row?.data) {
-        setData({ ...DEFAULT_DATA, ...row.data, config: { ...DEFAULT_CONFIG, ...row.data.config } });
+        const tryouts = (row.data.tryouts || []).map((t) => ({ ...t, skor: migrateSkor(t.skor) }));
+        setData({ ...DEFAULT_DATA, ...row.data, tryouts, config: { ...DEFAULT_CONFIG, ...row.data.config } });
       }
       firstLoad.current = false;
       setLoaded(true);
@@ -61,8 +68,10 @@ export default function StudyApp({ session }) {
   const setReminder = (v) => setData((d) => ({ ...d, reminder: typeof v === "function" ? v(d.reminder) : v }));
   const setSoalHistory = (v) => setData((d) => ({ ...d, soalHistory: typeof v === "function" ? v(d.soalHistory) : v }));
   const setNotifEnabled = (v) => setData((d) => ({ ...d, notifEnabled: typeof v === "function" ? v(d.notifEnabled) : v }));
+  const setStudyLog = (v) => setData((d) => ({ ...d, studyLog: typeof v === "function" ? v(d.studyLog || []) : v }));
+  const setSoalRequests = (v) => setData((d) => ({ ...d, soalRequests: typeof v === "function" ? v(d.soalRequests || []) : v }));
 
-  const { config, schedule, tryouts, materi, reminder, soalHistory, notifEnabled } = data;
+  const { config, schedule, tryouts, materi, reminder, soalHistory, notifEnabled, studyLog, soalRequests } = data;
 
   // Cek tiap menit apakah sudah waktunya kirim pengingat harian (hanya selagi tab terbuka)
   useEffect(() => {
@@ -173,11 +182,11 @@ export default function StudyApp({ session }) {
 
       <div className="flex-1 p-6 md:p-10 pb-24 md:pb-10 overflow-auto">
         {tab === "dashboard" && <Dashboard config={config} setConfig={setConfig} daysLeft={daysLeft} tryouts={tryouts} materi={materi} schedule={schedule} reminder={reminder} setReminder={setReminder} />}
-        {tab === "jadwal" && <Jadwal schedule={schedule} setSchedule={setSchedule} config={config} setConfig={setConfig} notifEnabled={notifEnabled} setNotifEnabled={setNotifEnabled} />}
+        {tab === "jadwal" && <Jadwal schedule={schedule} setSchedule={setSchedule} config={config} setConfig={setConfig} notifEnabled={notifEnabled} setNotifEnabled={setNotifEnabled} studyLog={studyLog} setStudyLog={setStudyLog} />}
         {tab === "tryout" && <TryOut tryouts={tryouts} setTryouts={setTryouts} />}
-        {tab === "analitik" && <Analitik tryouts={tryouts} materi={materi} config={config} soalHistory={soalHistory} />}
+        {tab === "analitik" && <Analitik tryouts={tryouts} materi={materi} config={config} soalHistory={soalHistory} onFocusSubtes={goToBankSoal} />}
         {tab === "materi" && <Materi materi={materi} setMateri={setMateri} />}
-        {tab === "soal" && <BankSoal soalHistory={soalHistory} setSoalHistory={setSoalHistory} />}
+        {tab === "soal" && <BankSoal soalHistory={soalHistory} setSoalHistory={setSoalHistory} initialFilter={bankSoalFilter} soalRequests={soalRequests} setSoalRequests={setSoalRequests} />}
       </div>
     </div>
   );

@@ -1,13 +1,69 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Plus, Check, X, Bell, BellOff, Play, Pause, RotateCcw } from "lucide-react";
+import { Plus, Check, X, Bell, BellOff, Play, Pause, RotateCcw, Flame } from "lucide-react";
 import { T, BlueprintCard, Eyebrow } from "../tokens";
 import { requestNotificationPermission, isNotificationSupported, showNotification, playBeep } from "../lib/notify";
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const DAYS = ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"];
+const todayKey = () => new Date().toISOString().slice(0, 10);
 
-export default function Jadwal({ schedule, setSchedule, config, setConfig, notifEnabled, setNotifEnabled }) {
+// Pola belajar mandiri/bimbel yang terbukti efektif: latihan aktif per subtes (retrieval
+// practice), review kesalahan, mempelajari materi baru, dan simulasi ujian berkala.
+// Disediakan sebagai pilihan cepat supaya agenda tetap terarah tanpa perlu mengetik.
+const QUICK_AGENDA_GROUPS = [
+  {
+    group: "Latihan Soal (Bank Soal)",
+    items: [
+      "Latihan 15 soal Penalaran Umum (PU)",
+      "Latihan 15 soal Pengetahuan & Pemahaman Umum (PPU)",
+      "Latihan 15 soal Pemahaman Bacaan & Menulis (PBM)",
+      "Latihan 15 soal Pengetahuan Kuantitatif (PK)",
+      "Latihan 15 soal Literasi Bahasa Indonesia (LBI)",
+      "Latihan 15 soal Literasi Bahasa Inggris (LBE)",
+      "Latihan 15 soal Penalaran Matematika (PM)",
+    ],
+  },
+  {
+    group: "Review & Evaluasi",
+    items: [
+      "Review dan bahas ulang soal yang salah dari sesi latihan sebelumnya",
+      "Cek Analitik: lihat subtes terlemah & progres try out",
+    ],
+  },
+  {
+    group: "Belajar Materi",
+    items: [
+      "Belajar materi baru 30-45 menit (cek Target Materi)",
+      "Hafalan rumus / kosakata penting 15 menit",
+    ],
+  },
+  {
+    group: "Simulasi Ujian",
+    items: [
+      "Simulasi try out penuh ±150 menit (kondisi seperti ujian asli)",
+    ],
+  },
+];
+
+// Streak beruntun: hitung mundur dari hari ini (atau kemarin kalau hari ini belum ada
+// agenda yang dicentang, biar streak tidak langsung putus sebelum hari berakhir).
+function computeStreak(studyLog) {
+  const set = new Set(studyLog || []);
+  const today = todayKey();
+  const doneToday = set.has(today);
+  const cursor = new Date();
+  if (!doneToday) cursor.setDate(cursor.getDate() - 1);
+  let streak = 0;
+  while (set.has(cursor.toISOString().slice(0, 10))) {
+    streak++;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  return { streak, doneToday };
+}
+
+export default function Jadwal({ schedule, setSchedule, config, setConfig, notifEnabled, setNotifEnabled, studyLog, setStudyLog }) {
   const [inputs, setInputs] = useState({});
+  const { streak, doneToday } = computeStreak(studyLog);
 
   const addItem = (day) => {
     const text = (inputs[day] || "").trim();
@@ -16,9 +72,22 @@ export default function Jadwal({ schedule, setSchedule, config, setConfig, notif
     setSchedule({ ...schedule, [day]: [...list, { id: uid(), text, done: false }] });
     setInputs({ ...inputs, [day]: "" });
   };
+  const addPreset = (day, text) => {
+    const list = schedule[day] || [];
+    setSchedule({ ...schedule, [day]: [...list, { id: uid(), text, done: false }] });
+  };
   const toggle = (day, id) => {
-    const list = (schedule[day] || []).map((it) => (it.id === id ? { ...it, done: !it.done } : it));
+    let willBeDone = false;
+    const list = (schedule[day] || []).map((it) => {
+      if (it.id !== id) return it;
+      willBeDone = !it.done;
+      return { ...it, done: willBeDone };
+    });
     setSchedule({ ...schedule, [day]: list });
+    if (willBeDone && setStudyLog) {
+      const today = todayKey();
+      setStudyLog((log) => (log.includes(today) ? log : [...log, today]));
+    }
   };
   const remove = (day, id) => {
     const list = (schedule[day] || []).filter((it) => it.id !== id);
@@ -35,7 +104,19 @@ export default function Jadwal({ schedule, setSchedule, config, setConfig, notif
       <Eyebrow>Perencanaan Mingguan</Eyebrow>
       <h1 className="text-2xl md:text-3xl font-bold mb-8" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Jadwal Belajar</h1>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <BlueprintCard>
+          <Eyebrow>Streak Konsistensi</Eyebrow>
+          <div className="flex items-baseline gap-2">
+            <Flame size={28} color={streak > 0 ? T.amber : T.paperLine} />
+            <div className="text-4xl font-bold" style={{ fontFamily: "'IBM Plex Mono', monospace", color: streak > 0 ? T.navy : T.inkSoft }}>{streak}</div>
+            <div className="text-sm" style={{ color: T.inkSoft }}>hari beruntun</div>
+          </div>
+          <div className="text-xs mt-3" style={{ color: doneToday ? T.teal : T.inkSoft }}>
+            {doneToday ? "Sudah checklist agenda hari ini — mantap!" : "Belum ada agenda yang dicentang hari ini."}
+          </div>
+        </BlueprintCard>
+
         <BlueprintCard>
           <Eyebrow>Pengingat Harian</Eyebrow>
           <label className="block text-xs mb-2" style={{ color: T.inkSoft }}>
@@ -84,12 +165,28 @@ export default function Jadwal({ schedule, setSchedule, config, setConfig, notif
                 </li>
               ))}
             </ul>
+            <select
+              defaultValue=""
+              onChange={(e) => {
+                if (e.target.value) addPreset(day, e.target.value);
+                e.target.value = "";
+              }}
+              className="w-full border px-2 py-1.5 text-sm mb-1.5"
+              style={{ borderColor: T.paperLine, color: T.inkSoft }}
+            >
+              <option value="" disabled>+ Pilihan cepat (tanpa ketik)…</option>
+              {QUICK_AGENDA_GROUPS.map((g) => (
+                <optgroup key={g.group} label={g.group}>
+                  {g.items.map((text) => <option key={text} value={text}>{text}</option>)}
+                </optgroup>
+              ))}
+            </select>
             <div className="flex gap-1.5">
               <input
                 value={inputs[day] || ""}
                 onChange={(e) => setInputs({ ...inputs, [day]: e.target.value })}
                 onKeyDown={(e) => e.key === "Enter" && addItem(day)}
-                placeholder="Tambah agenda…"
+                placeholder="…atau tulis agenda sendiri"
                 className="flex-1 border px-2 py-1.5 text-sm min-w-0"
                 style={{ borderColor: T.paperLine }}
               />

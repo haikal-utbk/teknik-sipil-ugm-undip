@@ -5,15 +5,19 @@ import { T, BlueprintCard, Eyebrow, IconBtn } from "../tokens";
 import { SUBTES, avgSkor } from "../lib/scoring";
 
 const uid = () => Math.random().toString(36).slice(2, 10);
+const CHART_COLORS = [T.steel, T.amber, T.teal, T.red, T.navy, T.steelLight, T.inkSoft];
+
+const emptyForm = () => ({ name: "", date: new Date().toISOString().slice(0, 10), ...Object.fromEntries(SUBTES.map((s) => [s.key, ""])) });
 
 export default function TryOut({ tryouts, setTryouts }) {
-  const [form, setForm] = useState({ name: "", date: new Date().toISOString().slice(0, 10), pk: "", pm: "", li: "", le: "" });
+  const [form, setForm] = useState(emptyForm());
 
   const addTryout = () => {
     if (!form.name.trim()) return;
-    const entry = { id: uid(), name: form.name, date: form.date, skor: { pk: form.pk, pm: form.pm, li: form.li, le: form.le } };
+    const skor = Object.fromEntries(SUBTES.map((s) => [s.key, form[s.key]]));
+    const entry = { id: uid(), name: form.name, date: form.date, skor };
     setTryouts([...tryouts, entry].sort((a, b) => a.date.localeCompare(b.date)));
-    setForm({ name: "", date: new Date().toISOString().slice(0, 10), pk: "", pm: "", li: "", le: "" });
+    setForm(emptyForm());
   };
   const remove = (id) => setTryouts(tryouts.filter((t) => t.id !== id));
 
@@ -29,7 +33,7 @@ export default function TryOut({ tryouts, setTryouts }) {
 
       <BlueprintCard className="mb-6">
         <Eyebrow>Catat Hasil Baru</Eyebrow>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2 items-end mt-2">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2 items-end mt-2">
           <label className="text-xs col-span-2" style={{ color: T.inkSoft }}>
             Nama try out
             <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="block w-full border px-2 py-1.5 text-sm mt-1" style={{ borderColor: T.paperLine }} placeholder="cth. TO Ganesha #3" />
@@ -61,10 +65,9 @@ export default function TryOut({ tryouts, setTryouts }) {
                 <YAxis domain={[0, 1000]} tick={{ fontSize: 11 }} stroke={T.inkSoft} />
                 <Tooltip />
                 <Legend />
-                <Line type="monotone" dataKey="PU" stroke={T.steel} strokeWidth={2} />
-                <Line type="monotone" dataKey="PM" stroke={T.amber} strokeWidth={2} />
-                <Line type="monotone" dataKey="LI" stroke={T.teal} strokeWidth={2} />
-                <Line type="monotone" dataKey="LE" stroke={T.red} strokeWidth={2} />
+                {SUBTES.map((s, i) => (
+                  <Line key={s.key} type="monotone" dataKey={s.short} stroke={CHART_COLORS[i % CHART_COLORS.length]} strokeWidth={2} />
+                ))}
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -95,7 +98,7 @@ export default function TryOut({ tryouts, setTryouts }) {
                 </tr>
               ))}
               {tryouts.length === 0 && (
-                <tr><td colSpan={7} className="py-4 text-center text-sm" style={{ color: T.inkSoft }}>Belum ada catatan try out.</td></tr>
+                <tr><td colSpan={4 + SUBTES.length} className="py-4 text-center text-sm" style={{ color: T.inkSoft }}>Belum ada catatan try out.</td></tr>
               )}
             </tbody>
           </table>
