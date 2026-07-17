@@ -12,15 +12,16 @@ const todayKey = () => new Date().toISOString().slice(0, 10);
 // Disediakan sebagai pilihan cepat supaya agenda tetap terarah tanpa perlu mengetik.
 const QUICK_AGENDA_GROUPS = [
   {
-    group: "Latihan Soal (Bank Soal)",
+    group: "Latihan Soal (Paket Latihan)",
     items: [
-      "Latihan 15 soal Penalaran Umum (PU)",
-      "Latihan 15 soal Pengetahuan & Pemahaman Umum (PPU)",
-      "Latihan 15 soal Pemahaman Bacaan & Menulis (PBM)",
-      "Latihan 15 soal Pengetahuan Kuantitatif (PK)",
-      "Latihan 15 soal Literasi Bahasa Indonesia (LBI)",
-      "Latihan 15 soal Literasi Bahasa Inggris (LBE)",
-      "Latihan 15 soal Penalaran Matematika (PM)",
+      "Latihan subtes Penalaran Umum (PU)",
+      "Latihan subtes Pengetahuan & Pemahaman Umum (PPU)",
+      "Latihan subtes Pemahaman Bacaan & Menulis (PBM)",
+      "Latihan subtes Pengetahuan Kuantitatif (PK)",
+      "Latihan subtes Literasi Bahasa Indonesia (LBI)",
+      "Latihan subtes Literasi Bahasa Inggris (LBE)",
+      "Latihan subtes Penalaran Matematika (PM)",
+      "Simulasi Penuh 1 Paket Latihan (±3 jam 15 menit)",
     ],
   },
   {
@@ -35,12 +36,6 @@ const QUICK_AGENDA_GROUPS = [
     items: [
       "Belajar materi baru 30-45 menit (cek Target Materi)",
       "Hafalan rumus / kosakata penting 15 menit",
-    ],
-  },
-  {
-    group: "Simulasi Ujian",
-    items: [
-      "Simulasi try out penuh ±150 menit (kondisi seperti ujian asli)",
     ],
   },
 ];
