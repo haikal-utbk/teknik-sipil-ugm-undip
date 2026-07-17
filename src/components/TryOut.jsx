@@ -90,7 +90,14 @@ export default function TryOut({ tryouts, setTryouts }) {
             <tbody>
               {tryouts.slice().reverse().map((t) => (
                 <tr key={t.id} style={{ borderBottom: `1px solid ${T.paperLine}` }}>
-                  <td className="py-2 pr-3">{t.name}</td>
+                  <td className="py-2 pr-3">
+                    {t.name}
+                    {t.estimated && (
+                      <span className="ml-1.5 px-1.5 py-0.5 text-[10px] font-medium" style={{ background: T.paperLine, color: T.inkSoft }} title="Skor perkiraan dari sesi Simulasi Penuh di Bank Soal, bukan skor IRT resmi">
+                        Estimasi
+                      </span>
+                    )}
+                  </td>
                   <td className="py-2 pr-3" style={{ color: T.inkSoft, fontFamily: "'IBM Plex Mono', monospace", fontSize: 12 }}>{t.date}</td>
                   {SUBTES.map((s) => <td key={s.key} className="text-right py-2 pr-3" style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{t.skor?.[s.key] || "—"}</td>)}
                   <td className="text-right py-2 pr-3 font-semibold" style={{ color: T.navy, fontFamily: "'IBM Plex Mono', monospace" }}>{avgSkor(t)}</td>

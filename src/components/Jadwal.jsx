@@ -1,11 +1,50 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Plus, Check, X, Bell, BellOff, Play, Pause, RotateCcw, Flame } from "lucide-react";
+import { Plus, Check, X, Bell, BellOff, Play, Pause, RotateCcw, Flame, Wand2, ArrowRight } from "lucide-react";
 import { T, BlueprintCard, Eyebrow } from "../tokens";
+import { SUBTES } from "../lib/scoring";
 import { requestNotificationPermission, isNotificationSupported, showNotification, playBeep } from "../lib/notify";
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const DAYS = ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"];
 const todayKey = () => new Date().toISOString().slice(0, 10);
+const todayDayName = () => ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"][new Date().getDay()];
+
+const DEFAULT_STUDY_SLOTS = [
+  { label: "Sore", start: "16:00", end: "17:30" },
+  { label: "Malam", start: "19:30", end: "21:00" },
+];
+
+// Pola mingguan default — berulang otomatis tiap minggu sampai H-1 UTBK (bukan 282
+// entri tanggal satu-satu, supaya ringan & tetap gampang diedit manual). Subtes
+// kuantitatif (PU/PK/PM) sengaja lebih sering muncul karena relevan untuk Teknik Sipil
+// — lihat juga kartu "Kelompok Prioritas" di Analitik. Minggu diisi Simulasi Penuh
+// (blok panjang ±3 jam 15 menit, tidak dipaksa ke slot sore/malam biasa).
+const AUTO_SCHEDULE_ROTATION = {
+  Senin: ["PU", "PM"],
+  Selasa: ["LBI", "PK"],
+  Rabu: ["PBM", "PU"],
+  Kamis: ["LBE", "PM"],
+  Jumat: ["PPU", "PK"],
+  Sabtu: ["REVIEW", "MATERI"],
+  Minggu: ["SIMULASI"],
+};
+
+function autoItemText(code) {
+  if (code === "REVIEW") return "Review dan bahas ulang soal yang salah dari sesi latihan sebelumnya";
+  if (code === "MATERI") return "Belajar materi baru 30-45 menit (cek Target Materi)";
+  if (code === "SIMULASI") return "Simulasi Penuh 1 Paket Latihan di Bank Soal (blok panjang, ±3 jam 15 menit — atur sendiri jam mulainya)";
+  const s = SUBTES.find((x) => x.short === code);
+  return s ? `Latihan subtes ${s.label} (${s.short})` : code;
+}
+
+// Menghubungkan agenda hasil generate ke aksi konkret di Bank Soal — dipakai tombol
+// "Kerjakan" dan untuk mencocokkan otomatis kapan agenda itu selesai dikerjakan.
+function autoItemLink(code) {
+  if (code === "SIMULASI") return { type: "simulasi" };
+  if (code === "REVIEW") return { type: "review" };
+  if (code === "MATERI") return { type: "materi" };
+  return { type: "subtes", subtes: code };
+}
 
 // Pola belajar mandiri/bimbel yang terbukti efektif: latihan aktif per subtes (retrieval
 // practice), review kesalahan, mempelajari materi baru, dan simulasi ujian berkala.
@@ -56,7 +95,7 @@ function computeStreak(studyLog) {
   return { streak, doneToday };
 }
 
-export default function Jadwal({ schedule, setSchedule, config, setConfig, notifEnabled, setNotifEnabled, studyLog, setStudyLog }) {
+export default function Jadwal({ schedule, setSchedule, config, setConfig, notifEnabled, setNotifEnabled, studyLog, setStudyLog, onStartAgenda }) {
   const [inputs, setInputs] = useState({});
   const { streak, doneToday } = computeStreak(studyLog);
 
@@ -70,6 +109,24 @@ export default function Jadwal({ schedule, setSchedule, config, setConfig, notif
   const addPreset = (day, text) => {
     const list = schedule[day] || [];
     setSchedule({ ...schedule, [day]: [...list, { id: uid(), text, done: false }] });
+  };
+
+  const studySlots = config.studySlots || DEFAULT_STUDY_SLOTS;
+  const setSlotTime = (i, field, value) => {
+    const next = studySlots.map((s, idx) => (idx === i ? { ...s, [field]: value } : s));
+    setConfig({ ...config, studySlots: next });
+  };
+  const generateAutoSchedule = () => {
+    const slots = studySlots;
+    const next = {};
+    DAYS.forEach((day) => {
+      const codes = AUTO_SCHEDULE_ROTATION[day] || [];
+      next[day] = codes.map((code, i) => {
+        const prefix = code === "SIMULASI" ? "" : `${slots[i]?.start || "?"}–${slots[i]?.end || "?"} — `;
+        return { id: uid(), text: `${prefix}${autoItemText(code)}`, done: false, link: autoItemLink(code) };
+      });
+    });
+    setSchedule(next);
   };
   const toggle = (day, id) => {
     let willBeDone = false;
@@ -143,10 +200,39 @@ export default function Jadwal({ schedule, setSchedule, config, setConfig, notif
         <Pomodoro notifEnabled={notifEnabled} />
       </div>
 
+      <BlueprintCard className="mb-6">
+        <Eyebrow>Jadwal Otomatis</Eyebrow>
+        <div className="text-sm mb-3" style={{ color: T.ink }}>
+          Buat pola belajar mingguan sekali klik — Senin–Jumat diisi latihan subtes (diseringkan ke PU/PK/PM karena relevan untuk Teknik Sipil), Sabtu untuk review & materi, Minggu untuk Simulasi Penuh. Atur dulu slot waktunya, lalu klik generate. Setelah dibuat, pola ini sepenuhnya milikmu — bisa diedit bebas dan tidak akan tertimpa otomatis.
+        </div>
+        <div className="flex flex-wrap gap-4 mb-4">
+          {studySlots.map((slot, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <span className="text-xs w-10" style={{ color: T.inkSoft }}>{slot.label}</span>
+              <input type="time" value={slot.start} onChange={(e) => setSlotTime(i, "start", e.target.value)} className="border px-2 py-1 text-sm" style={{ borderColor: T.paperLine }} />
+              <span className="text-xs" style={{ color: T.inkSoft }}>–</span>
+              <input type="time" value={slot.end} onChange={(e) => setSlotTime(i, "end", e.target.value)} className="border px-2 py-1 text-sm" style={{ borderColor: T.paperLine }} />
+            </div>
+          ))}
+        </div>
+        <button onClick={generateAutoSchedule} className="px-3 py-1.5 text-sm font-medium flex items-center gap-1.5" style={{ background: T.navy, color: "#fff" }}>
+          <Wand2 size={14} /> Buat Jadwal Otomatis
+        </button>
+        <div className="text-xs mt-2" style={{ color: T.inkSoft }}>
+          Perhatian: ini mengganti seluruh agenda yang sudah ada di ketujuh hari dengan pola default di atas.
+        </div>
+      </BlueprintCard>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {DAYS.map((day) => (
-          <BlueprintCard key={day}>
-            <Eyebrow>{day}</Eyebrow>
+        {DAYS.map((day) => {
+          const isToday = day === todayDayName();
+          return (
+          <BlueprintCard key={day} style={!isToday ? { opacity: 0.55 } : undefined}>
+            <div className="flex items-center justify-between mb-2">
+              <Eyebrow>{day}</Eyebrow>
+              {!isToday && <span className="text-[10px]" style={{ color: T.inkSoft }}>Terkunci — bukan hari ini</span>}
+            </div>
+            <div style={!isToday ? { pointerEvents: "none" } : undefined}>
             <ul className="space-y-1.5 mb-3 min-h-[24px]">
               {(schedule[day] || []).map((it) => (
                 <li key={it.id} className="flex items-start gap-2 text-sm group">
@@ -154,7 +240,12 @@ export default function Jadwal({ schedule, setSchedule, config, setConfig, notif
                     <Check size={15} strokeWidth={3} />
                   </button>
                   <span className="flex-1" style={{ textDecoration: it.done ? "line-through" : "none", color: it.done ? T.inkSoft : T.ink }}>{it.text}</span>
-                  <button onClick={() => remove(day, it.id)} style={{ color: T.red }} className="opacity-0 group-hover:opacity-100 transition-opacity">
+                  {it.link && !it.done && onStartAgenda && (
+                    <button onClick={() => onStartAgenda(it.link)} className="shrink-0 px-1.5 py-0.5 text-[10px] font-medium flex items-center gap-0.5" style={{ background: T.steel, color: "#fff" }}>
+                      Kerjakan <ArrowRight size={10} />
+                    </button>
+                  )}
+                  <button onClick={() => remove(day, it.id)} style={{ color: T.red }} className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
                     <X size={13} />
                   </button>
                 </li>
@@ -189,8 +280,10 @@ export default function Jadwal({ schedule, setSchedule, config, setConfig, notif
                 <Plus size={15} />
               </button>
             </div>
+            </div>
           </BlueprintCard>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

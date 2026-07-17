@@ -35,7 +35,7 @@ function getAvailablePakets() {
 
 const mmss = (s) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 
-export default function PaketLatihan({ soalHistory, setSoalHistory, soalRequests, setSoalRequests, initialFocusSubtes }) {
+export default function PaketLatihan({ soalHistory, setSoalHistory, soalRequests, setSoalRequests, initialFocusSubtes, initialAction, tryouts, setTryouts, topicStats, setTopicStats }) {
   const [selectedPaket, setSelectedPaket] = useState(null); // null = daftar paket
   const [sessionSegments, setSessionSegments] = useState(null); // null = menu paket (belum mulai sesi)
   const [segPos, setSegPos] = useState(0);
@@ -79,21 +79,28 @@ export default function PaketLatihan({ soalHistory, setSoalHistory, soalRequests
   const exitToMenu = () => setSessionSegments(null);
   const exitToList = () => { setSelectedPaket(null); setSessionSegments(null); };
 
-  // Datang dari rekomendasi Analitik ("Latihan soal X") — langsung buka paket pertama
-  // yang tersedia dan mulai sesi subtes yang direkomendasikan.
+  // Datang dari rekomendasi Analitik ("Latihan soal X") atau tombol "Kerjakan" di Jadwal
+  // — langsung buka paket pertama yang tersedia dan mulai sesi yang diminta.
   useEffect(() => {
-    if (!initialFocusSubtes) return;
+    if (!initialFocusSubtes && !initialAction) return;
     const avail = getAvailablePakets();
     if (avail.length === 0) return;
+    setSelectedPaket(avail[0]);
+    if (initialAction === "simulasi") {
+      setSessionSegments(PAKET_STRUCTURE);
+      setSegPos(0); setIdxInSeg(0); setAnswers({}); setFinished(false); setReviewMode(false);
+      setTimeLeft(PAKET_STRUCTURE[0].minutes * 60);
+      savedRef.current = false;
+      return;
+    }
     const segDef = PAKET_STRUCTURE.find((s) => s.subtes === initialFocusSubtes);
     if (!segDef) return;
-    setSelectedPaket(avail[0]);
     setSessionSegments([segDef]);
     setSegPos(0); setIdxInSeg(0); setAnswers({}); setFinished(false); setReviewMode(false);
     setTimeLeft(segDef.minutes * 60);
     savedRef.current = false;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialFocusSubtes]);
+  }, [initialFocusSubtes, initialAction]);
 
   const goNextSegment = () => {
     setSegPos((p) => {
@@ -134,10 +141,45 @@ export default function PaketLatihan({ soalHistory, setSoalHistory, soalRequests
       : sessionSegments.length > 1
         ? `Paket ${selectedPaket} (Penuh)`
         : `Paket ${selectedPaket} · ${sessionSegments[0].subtes}`;
+    const sessionType = reviewMode ? "review" : sessionSegments.length > 1 ? "full" : "subtes";
+    const sessionSubtes = sessionType === "subtes" ? sessionSegments[0].subtes : null;
     setSoalHistory((h) => [
       ...h,
-      { id: uid(), date: new Date().toISOString().slice(0, 10), filter: label, examMode: !reviewMode, total: allSessionQuestions.length, score },
+      { id: uid(), date: new Date().toISOString().slice(0, 10), filter: label, examMode: !reviewMode, total: allSessionQuestions.length, score, sessionType, sessionSubtes },
     ]);
+
+    // Akumulasi akurasi per topik (subtes::topic), dipakai Target Materi untuk auto-
+    // menandai topik "Selesai". Mode Review dilewati supaya tidak menghitung dua kali
+    // soal yang sama dari sesi sebelumnya.
+    if (!reviewMode && setTopicStats) {
+      setTopicStats((prev) => {
+        const next = { ...prev };
+        allSessionQuestions.forEach((q) => {
+          const key = `${q.subtes}::${q.topic}`;
+          const cur = next[key] || { correct: 0, total: 0 };
+          next[key] = { correct: cur.correct + (answers[q.id] === q.answer ? 1 : 0), total: cur.total + 1 };
+        });
+        return next;
+      });
+    }
+
+    // Simulasi Penuh (semua 7 segmen) juga dicatat sebagai try out perkiraan, supaya
+    // tren skornya ikut muncul di Analitik bersama try out asli. Ini BUKAN skor IRT
+    // resmi — cuma persentase benar per subtes diskalakan ke 0-1000, ditandai jelas
+    // sebagai "Estimasi" di Tracker Try Out.
+    if (!reviewMode && sessionSegments.length > 1 && setTryouts) {
+      const skor = {};
+      PAKET_STRUCTURE.forEach((s) => {
+        const subtesDef = SUBTES.find((x) => x.short === s.subtes);
+        const qs = QUESTION_BANK.filter((q) => q.paket === selectedPaket && q.subtes === s.subtes);
+        const correct = qs.reduce((a, q) => a + (answers[q.id] === q.answer ? 1 : 0), 0);
+        if (subtesDef) skor[subtesDef.key] = qs.length ? Math.round((correct / qs.length) * 1000) : 0;
+      });
+      setTryouts((t) =>
+        [...t, { id: uid(), name: `Simulasi Penuh Paket ${selectedPaket}`, date: new Date().toISOString().slice(0, 10), skor, estimated: true }]
+          .sort((a, b) => a.date.localeCompare(b.date))
+      );
+    }
   }, [finished]);
 
   const submitRequest = () => {

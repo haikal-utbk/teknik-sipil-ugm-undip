@@ -14,8 +14,17 @@ import Materi from "./components/Materi";
 import BankSoal from "./components/BankSoal";
 import Analitik from "./components/Analitik";
 
-const DEFAULT_CONFIG = { examDate: "2027-04-25", target1: "Teknik Sipil UGM", target2: "Teknik Sipil UNDIP", reminderTime: "19:00" };
-const DEFAULT_DATA = { config: DEFAULT_CONFIG, schedule: {}, tryouts: [], materi: [], reminder: "", soalHistory: [], notifEnabled: false, studyLog: [], soalRequests: [] };
+const DEFAULT_CONFIG = {
+  examDate: "2027-04-25",
+  target1: "Teknik Sipil UGM",
+  target2: "Teknik Sipil UNDIP",
+  reminderTime: "19:00",
+  studySlots: [
+    { label: "Sore", start: "16:00", end: "17:30" },
+    { label: "Malam", start: "19:30", end: "21:00" },
+  ],
+};
+const DEFAULT_DATA = { config: DEFAULT_CONFIG, schedule: {}, tryouts: [], materi: [], reminder: "", soalHistory: [], notifEnabled: false, studyLog: [], soalRequests: [], topicStats: {} };
 
 const todayName = () => ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"][new Date().getDay()];
 
@@ -26,13 +35,26 @@ export default function StudyApp({ session }) {
   const [loaded, setLoaded] = useState(false);
   const [data, setData] = useState(DEFAULT_DATA);
   const [bankSoalFilter, setBankSoalFilter] = useState(null);
+  const [bankSoalAction, setBankSoalAction] = useState(null);
   const goToBankSoal = (subtesShort) => {
     setBankSoalFilter(subtesShort);
+    setBankSoalAction(null);
     setTab("soal");
+  };
+  // Tombol "Kerjakan" di agenda Jadwal Otomatis — buka sesi yang sesuai di Bank Soal.
+  const startAgenda = (link) => {
+    if (!link) return;
+    if (link.type === "materi") { setTab("materi"); return; }
+    if (link.type === "simulasi") { setBankSoalAction("simulasi"); setBankSoalFilter(null); setTab("soal"); return; }
+    if (link.type === "subtes") { setBankSoalFilter(link.subtes); setBankSoalAction(null); setTab("soal"); return; }
+    // "review": tidak bisa langsung di-deep-link (butuh soal salah dari sesi terakhir),
+    // cukup buka Bank Soal supaya bisa dipilih manual.
+    setBankSoalFilter(null); setBankSoalAction(null); setTab("soal");
   };
   const saveTimer = useRef(null);
   const firstLoad = useRef(true);
   const lastNotifiedDate = useRef(null);
+  const prevSoalHistoryLenRef = useRef(null);
 
   // Muat data user dari Supabase saat pertama kali masuk
   useEffect(() => {
@@ -70,8 +92,35 @@ export default function StudyApp({ session }) {
   const setNotifEnabled = (v) => setData((d) => ({ ...d, notifEnabled: typeof v === "function" ? v(d.notifEnabled) : v }));
   const setStudyLog = (v) => setData((d) => ({ ...d, studyLog: typeof v === "function" ? v(d.studyLog || []) : v }));
   const setSoalRequests = (v) => setData((d) => ({ ...d, soalRequests: typeof v === "function" ? v(d.soalRequests || []) : v }));
+  const setTopicStats = (v) => setData((d) => ({ ...d, topicStats: typeof v === "function" ? v(d.topicStats || {}) : v }));
 
-  const { config, schedule, tryouts, materi, reminder, soalHistory, notifEnabled, studyLog, soalRequests } = data;
+  const { config, schedule, tryouts, materi, reminder, soalHistory, notifEnabled, studyLog, soalRequests, topicStats } = data;
+
+  // Begitu sesi Bank Soal selesai (entri baru di soalHistory), cocokkan dengan agenda
+  // hari ini yang punya link ke sesi itu (subtes/simulasi/review) dan tandai selesai.
+  useEffect(() => {
+    if (!loaded) return;
+    if (prevSoalHistoryLenRef.current === null || soalHistory.length <= prevSoalHistoryLenRef.current) {
+      prevSoalHistoryLenRef.current = soalHistory.length;
+      return;
+    }
+    prevSoalHistoryLenRef.current = soalHistory.length;
+    const last = soalHistory[soalHistory.length - 1];
+    if (!last?.sessionType) return;
+    const day = todayName();
+    const todays = schedule[day] || [];
+    const matchIdx = todays.findIndex((it) => {
+      if (it.done || !it.link) return false;
+      if (last.sessionType === "full") return it.link.type === "simulasi";
+      if (last.sessionType === "subtes") return it.link.type === "subtes" && it.link.subtes === last.sessionSubtes;
+      if (last.sessionType === "review") return it.link.type === "review";
+      return false;
+    });
+    if (matchIdx === -1) return;
+    setSchedule({ ...schedule, [day]: todays.map((it, i) => (i === matchIdx ? { ...it, done: true } : it)) });
+    const todayDate = new Date().toISOString().slice(0, 10);
+    setStudyLog((log) => ((log || []).includes(todayDate) ? log : [...(log || []), todayDate]));
+  }, [soalHistory, loaded]);
 
   // Cek tiap menit apakah sudah waktunya kirim pengingat harian (hanya selagi tab terbuka)
   useEffect(() => {
@@ -182,11 +231,11 @@ export default function StudyApp({ session }) {
 
       <div className="flex-1 p-6 md:p-10 pb-24 md:pb-10 overflow-auto">
         {tab === "dashboard" && <Dashboard config={config} setConfig={setConfig} daysLeft={daysLeft} tryouts={tryouts} materi={materi} schedule={schedule} reminder={reminder} setReminder={setReminder} />}
-        {tab === "jadwal" && <Jadwal schedule={schedule} setSchedule={setSchedule} config={config} setConfig={setConfig} notifEnabled={notifEnabled} setNotifEnabled={setNotifEnabled} studyLog={studyLog} setStudyLog={setStudyLog} />}
+        {tab === "jadwal" && <Jadwal schedule={schedule} setSchedule={setSchedule} config={config} setConfig={setConfig} notifEnabled={notifEnabled} setNotifEnabled={setNotifEnabled} studyLog={studyLog} setStudyLog={setStudyLog} onStartAgenda={startAgenda} />}
         {tab === "tryout" && <TryOut tryouts={tryouts} setTryouts={setTryouts} />}
         {tab === "analitik" && <Analitik tryouts={tryouts} materi={materi} config={config} soalHistory={soalHistory} onFocusSubtes={goToBankSoal} />}
-        {tab === "materi" && <Materi materi={materi} setMateri={setMateri} />}
-        {tab === "soal" && <BankSoal soalHistory={soalHistory} setSoalHistory={setSoalHistory} initialFilter={bankSoalFilter} soalRequests={soalRequests} setSoalRequests={setSoalRequests} />}
+        {tab === "materi" && <Materi materi={materi} setMateri={setMateri} topicStats={topicStats} />}
+        {tab === "soal" && <BankSoal soalHistory={soalHistory} setSoalHistory={setSoalHistory} initialFilter={bankSoalFilter} initialAction={bankSoalAction} soalRequests={soalRequests} setSoalRequests={setSoalRequests} tryouts={tryouts} setTryouts={setTryouts} topicStats={topicStats} setTopicStats={setTopicStats} />}
       </div>
     </div>
   );
