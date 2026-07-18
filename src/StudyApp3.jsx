@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
   CalendarClock, ClipboardList, LineChart as LineChartIcon,
-  BookOpenCheck, HelpCircle, LogOut, Target,
+  BookOpenCheck, HelpCircle, LogOut, Target, Users,
 } from "lucide-react";
 import { supabase } from "./lib/supabase";
 import { migrateSkor } from "./lib/scoring";
@@ -13,6 +13,7 @@ import TryOut from "./components/TryOut";
 import Materi from "./components/Materi";
 import BankSoal from "./components/BankSoal";
 import Analitik from "./components/Analitik";
+import AdminMonitor from "./components/AdminMonitor";
 
 const DEFAULT_CONFIG = {
   examDate: "2027-04-25",
@@ -34,6 +35,7 @@ export default function StudyApp({ session }) {
   const [tab, setTab] = useState("dashboard");
   const [loaded, setLoaded] = useState(false);
   const [data, setData] = useState(DEFAULT_DATA);
+  const [role, setRole] = useState("student");
   const [bankSoalFilter, setBankSoalFilter] = useState(null);
   const [bankSoalAction, setBankSoalAction] = useState(null);
   const goToBankSoal = (subtesShort) => {
@@ -70,6 +72,19 @@ export default function StudyApp({ session }) {
       }
       firstLoad.current = false;
       setLoaded(true);
+    })();
+  }, [userId]);
+
+  // Cek role akun (admin/student) — kalau tabel profiles belum ada (migrasi
+  // belum dijalankan), diamkan saja dan tetap perlakukan sebagai student.
+  useEffect(() => {
+    (async () => {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", userId)
+        .maybeSingle();
+      if (profile?.role === "admin") setRole("admin");
     })();
   }, [userId]);
 
@@ -154,6 +169,7 @@ export default function StudyApp({ session }) {
     { id: "analitik", label: "Analitik", icon: Target },
     { id: "materi", label: "Target Materi", icon: BookOpenCheck },
     { id: "soal", label: "Bank Soal", icon: HelpCircle },
+    ...(role === "admin" ? [{ id: "pantau", label: "Pantau Anak", icon: Users }] : []),
   ];
 
   if (!loaded) {
@@ -236,6 +252,7 @@ export default function StudyApp({ session }) {
         {tab === "analitik" && <Analitik tryouts={tryouts} materi={materi} config={config} soalHistory={soalHistory} onFocusSubtes={goToBankSoal} />}
         {tab === "materi" && <Materi materi={materi} setMateri={setMateri} topicStats={topicStats} />}
         {tab === "soal" && <BankSoal soalHistory={soalHistory} setSoalHistory={setSoalHistory} initialFilter={bankSoalFilter} initialAction={bankSoalAction} soalRequests={soalRequests} setSoalRequests={setSoalRequests} tryouts={tryouts} setTryouts={setTryouts} topicStats={topicStats} setTopicStats={setTopicStats} />}
+        {tab === "pantau" && role === "admin" && <AdminMonitor />}
       </div>
     </div>
   );

@@ -59,6 +59,27 @@ Edit file di folder `src/`, lalu unggah ulang file yang berubah ke GitHub
 mem-build dan mempublikasikan ulang setiap kali ada perubahan di GitHub —
 tidak perlu deploy manual lagi.
 
+## Menambahkan role admin (memantau progres anak)
+
+Kalau kamu ingin akun kamu bisa memantau progres belajar akun anak (tanpa
+bisa mengubah datanya) tanpa perlu login bergantian:
+
+1. Di Supabase, buka **SQL Editor → New query**.
+2. Buka file **`supabase-setup-admin.sql`** di folder ini, salin semua isinya,
+   tempel ke editor, lalu **Run**.
+3. Di baris paling bawah file itu ada perintah `update public.profiles set
+   role = 'admin' where email = '...'` yang di-comment (diawali `--`). Salin
+   baris itu ke query baru, ganti email dengan email akun kamu (yang dipakai
+   login di web ini), lalu **Run** — hanya sekali, untuk akun kamu saja.
+4. Login ulang di web (logout lalu login lagi). Menu baru **"Pantau Anak"**
+   akan muncul di sidebar, berisi daftar akun student yang terhubung beserta
+   progres belajarnya (hitung mundur, skor try out, progres materi, jadwal
+   mingguan) — tampilan lihat-saja, tidak bisa diedit dari sana.
+
+Akun anak tidak berubah sama sekali — dia tetap login dan pakai aplikasi
+seperti biasa, tidak melihat menu "Pantau Anak" karena role dia tetap
+`student`.
+
 ## Biaya
 
 Supabase dan Vercel gratis untuk pemakaian skala pribadi/keluarga seperti
